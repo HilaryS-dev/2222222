@@ -9,65 +9,61 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     exit();
 }
 
-define('SUPABASE_URL', 'https://bybuiaxzzinlfrhtjjdn.supabase.co');
-define('SUPABASE_ANON_KEY', 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJ5YnVpYXh6emlubGZyaHRqamRuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTk4ODc3OTgsImV4cCI6MjA3NTQ2Mzc5OH0.wk7_U__rcxXarPa_sWwo_0aHkocOlGzJSd-FJpw_bGY');
+define('DB_HOST', 'localhost');
+define('DB_USER', 'root');
+define('DB_PASS', '');
+define('DB_NAME', 'smartbite');
 
-function supabaseRequest($endpoint, $method = 'GET', $data = null, $token = null) {
-    $url = SUPABASE_URL . '/rest/v1/' . $endpoint;
-
-    $headers = [
-        'apikey: ' . SUPABASE_ANON_KEY,
-        'Content-Type: application/json',
-        'Prefer: return=representation'
-    ];
-
-    if ($token) {
-        $headers[] = 'Authorization: Bearer ' . $token;
+function getDB() {
+    static $conn = null;
+    if ($conn === null) {
+        $conn = new mysqli(DB_HOST, DB_USER, DB_PASS, DB_NAME);
+        if ($conn->connect_error) {
+            sendResponse(['error' => 'Database connection failed'], 500);
+        }
+        $conn->set_charset('utf8mb4');
     }
-
-    $ch = curl_init();
-    curl_setopt($ch, CURLOPT_URL, $url);
-    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-    curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
-    curl_setopt($ch, CURLOPT_CUSTOMREQUEST, $method);
-
-    if ($data && in_array($method, ['POST', 'PUT', 'PATCH'])) {
-        curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($data));
-    }
-
-    $response = curl_exec($ch);
-    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    curl_close($ch);
-
-    return [
-        'status' => $httpCode,
-        'data' => json_decode($response, true)
-    ];
+    return $conn;
 }
 
-function supabaseAuth($endpoint, $data) {
-    $url = SUPABASE_URL . '/auth/v1/' . $endpoint;
+function generateToken($userId) {
+    return base64_encode(random_bytes(32) . ':' . $userId . ':' . time());
+}
 
-    $headers = [
-        'apikey: ' . SUPABASE_ANON_KEY,
-        'Content-Type: application/json'
-    ];
+function validateToken($token) {
+    if (!$token) return null;
 
-    $ch = curl_init();
-    curl_setopt($ch, CURLOPT_URL, $url);
-    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-    curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
-    curl_setopt($ch, CURLOPT_POST, true);
-    curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($data));
+    $db = getDB();
+    $stmt = $db->prepare("SELECT user_id FROM user_sessions WHERE token = ? AND expires_at > NOW()");
+    $stmt->bind_param('s', $token);
+    $stmt->execute();
+    $result = $stmt->get_result();
+    $row = $result->fetch_assoc();
+    $stmt->close();
 
-    $response = curl_exec($ch);
-    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    curl_close($ch);
+    return $row ? $row['user_id'] : null;
+}
 
-    return [
-        'status' => $httpCode,
-        'data' => json_decode($response, true)
-    ];
+function getUserById($userId) {
+    $db = getDB();
+    $stmt = $db->prepare("
+        SELECT u.*,
+               CASE
+                   WHEN u.user_id IN (SELECT customer_id FROM customer) THEN 'customer'
+                   WHEN u.user_id IN (SELECT manager_id FROM restaurant_manager) THEN 'manager'
+                   WHEN u.user_id IN (SELECT agent_id FROM delivery_agent) THEN 'delivery'
+                   WHEN u.user_id IN (SELECT admin_id FROM admin) THEN 'admin'
+                   ELSE 'customer'
+               END as user_type
+        FROM user u
+        WHERE u.user_id = ?
+    ");
+    $stmt->bind_param('i', $userId);
+    $stmt->execute();
+    $result = $stmt->get_result();
+    $user = $result->fetch_assoc();
+    $stmt->close();
+    return $user;
 }
 
 function getAuthToken() {
@@ -76,6 +72,15 @@ function getAuthToken() {
         return str_replace('Bearer ', '', $headers['Authorization']);
     }
     return null;
+}
+
+function requireAuth() {
+    $token = getAuthToken();
+    $userId = validateToken($token);
+    if (!$userId) {
+        sendResponse(['error' => 'Unauthorized'], 401);
+    }
+    return getUserById($userId);
 }
 
 function sendResponse($data, $status = 200) {

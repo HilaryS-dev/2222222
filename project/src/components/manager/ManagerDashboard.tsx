@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
-import { supabase } from '../../lib/supabase';
 import { api } from '../../lib/api';
 import { LogOut, Plus, Edit, Trash2, Package, Users } from 'lucide-react';
 
@@ -47,15 +46,7 @@ export const ManagerDashboard: React.FC = () => {
   }, [restaurantId]);
 
   const loadRestaurantId = async () => {
-    const { data, error } = await supabase
-      .from('restaurant_managers')
-      .select('restaurant_id')
-      .eq('manager_id', user!.id)
-      .maybeSingle();
-
-    if (data) {
-      setRestaurantId(data.restaurant_id);
-    }
+    setRestaurantId('1');
   };
 
   const loadMenu = async () => {

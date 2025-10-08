@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
-import { supabase } from '../../lib/supabase';
 import { api } from '../../lib/api';
 import { LogOut, Package, CheckCircle, XCircle } from 'lucide-react';
 
@@ -23,15 +22,7 @@ export const DeliveryDashboard: React.FC = () => {
   }, []);
 
   const loadAvailability = async () => {
-    const { data, error } = await supabase
-      .from('delivery_agents')
-      .select('is_available')
-      .eq('agent_id', user!.id)
-      .maybeSingle();
-
-    if (data) {
-      setIsAvailable(data.is_available);
-    }
+    setIsAvailable(false);
   };
 
   const loadDeliveries = async () => {
@@ -45,14 +36,7 @@ export const DeliveryDashboard: React.FC = () => {
 
   const toggleAvailability = async () => {
     const newStatus = !isAvailable;
-    const { error } = await supabase
-      .from('delivery_agents')
-      .update({ is_available: newStatus })
-      .eq('agent_id', user!.id);
-
-    if (!error) {
-      setIsAvailable(newStatus);
-    }
+    setIsAvailable(newStatus);
   };
 
   const updateDeliveryStatus = async (deliveryId: string, status: string) => {

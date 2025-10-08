@@ -9,49 +9,64 @@ switch ($method) {
         $action = $_GET['action'] ?? '';
 
         if ($action === 'signup') {
-            if (!isset($input['email']) || !isset($input['password']) || !isset($input['name']) || !isset($input['user_type'])) {
+            if (!isset($input['email']) || !isset($input['password']) || !isset($input['name'])) {
                 sendResponse(['error' => 'Missing required fields'], 400);
             }
 
-            $authResult = supabaseAuth('signup', [
-                'email' => $input['email'],
-                'password' => $input['password']
-            ]);
+            $db = getDB();
 
-            if ($authResult['status'] !== 200) {
-                sendResponse(['error' => 'Registration failed', 'details' => $authResult['data']], $authResult['status']);
+            $email = $input['email'];
+            $stmt = $db->prepare("SELECT user_id FROM user WHERE email = ?");
+            $stmt->bind_param('s', $email);
+            $stmt->execute();
+            $result = $stmt->get_result();
+            if ($result->num_rows > 0) {
+                sendResponse(['error' => 'Email already exists'], 400);
+            }
+            $stmt->close();
+
+            $hashedPassword = password_hash($input['password'], PASSWORD_DEFAULT);
+            $name = $input['name'];
+            $phone = $input['phone_number'] ?? '';
+
+            $stmt = $db->prepare("INSERT INTO user (name, phone_number, email, password) VALUES (?, ?, ?, ?)");
+            $stmt->bind_param('ssss', $name, $phone, $email, $hashedPassword);
+
+            if (!$stmt->execute()) {
+                sendResponse(['error' => 'Registration failed'], 500);
             }
 
-            $userId = $authResult['data']['user']['id'];
-            $token = $authResult['data']['access_token'];
+            $userId = $stmt->insert_id;
+            $stmt->close();
 
-            $profileResult = supabaseRequest('user_profiles', 'POST', [
-                'user_id' => $userId,
-                'name' => $input['name'],
-                'email' => $input['email'],
-                'phone_number' => $input['phone_number'] ?? '',
-                'user_type' => $input['user_type']
-            ], $token);
+            $stmt = $db->prepare("INSERT INTO customer (customer_id) VALUES (?)");
+            $stmt->bind_param('i', $userId);
+            $stmt->execute();
+            $stmt->close();
 
-            if ($input['user_type'] === 'customer') {
-                supabaseRequest('customers', 'POST', [
-                    'customer_id' => $userId
-                ], $token);
+            $stmt = $db->prepare("INSERT INTO cart (customer_id, total_amount) VALUES (?, 0)");
+            $stmt->bind_param('i', $userId);
+            $stmt->execute();
+            $stmt->close();
 
-                supabaseRequest('carts', 'POST', [
-                    'customer_id' => $userId,
-                    'total_amount' => 0
-                ], $token);
-            } elseif ($input['user_type'] === 'delivery') {
-                supabaseRequest('delivery_agents', 'POST', [
-                    'agent_id' => $userId,
-                    'is_available' => false
-                ], $token);
-            }
+            $token = generateToken($userId);
+            $expiresAt = date('Y-m-d H:i:s', strtotime('+7 days'));
+
+            $stmt = $db->prepare("INSERT INTO user_sessions (user_id, token, expires_at) VALUES (?, ?, ?)");
+            $stmt->bind_param('iss', $userId, $token, $expiresAt);
+            $stmt->execute();
+            $stmt->close();
+
+            $user = getUserById($userId);
 
             sendResponse([
                 'success' => true,
-                'user' => $authResult['data']['user'],
+                'user' => [
+                    'id' => $user['user_id'],
+                    'email' => $user['email'],
+                    'name' => $user['name'],
+                    'user_type' => $user['user_type']
+                ],
                 'token' => $token
             ]);
 
@@ -60,25 +75,40 @@ switch ($method) {
                 sendResponse(['error' => 'Missing email or password'], 400);
             }
 
-            $authResult = supabaseAuth('token?grant_type=password', [
-                'email' => $input['email'],
-                'password' => $input['password']
-            ]);
+            $db = getDB();
+            $email = $input['email'];
 
-            if ($authResult['status'] !== 200) {
-                sendResponse(['error' => 'Invalid credentials', 'details' => $authResult['data']], $authResult['status']);
+            $stmt = $db->prepare("SELECT user_id, password FROM user WHERE email = ?");
+            $stmt->bind_param('s', $email);
+            $stmt->execute();
+            $result = $stmt->get_result();
+            $row = $result->fetch_assoc();
+            $stmt->close();
+
+            if (!$row || !password_verify($input['password'], $row['password'])) {
+                sendResponse(['error' => 'Invalid credentials'], 401);
             }
 
-            $token = $authResult['data']['access_token'];
-            $userId = $authResult['data']['user']['id'];
+            $userId = $row['user_id'];
+            $token = generateToken($userId);
+            $expiresAt = date('Y-m-d H:i:s', strtotime('+7 days'));
 
-            $profileResult = supabaseRequest("user_profiles?user_id=eq.$userId", 'GET', null, $token);
+            $stmt = $db->prepare("INSERT INTO user_sessions (user_id, token, expires_at) VALUES (?, ?, ?)");
+            $stmt->bind_param('iss', $userId, $token, $expiresAt);
+            $stmt->execute();
+            $stmt->close();
+
+            $user = getUserById($userId);
 
             sendResponse([
                 'success' => true,
-                'user' => $authResult['data']['user'],
-                'token' => $token,
-                'profile' => $profileResult['data'][0] ?? null
+                'user' => [
+                    'id' => $user['user_id'],
+                    'email' => $user['email'],
+                    'name' => $user['name'],
+                    'user_type' => $user['user_type']
+                ],
+                'token' => $token
             ]);
         }
 

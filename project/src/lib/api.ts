@@ -19,6 +19,66 @@ export const api = {
       return res.json();
     },
   },
+  admin: {
+    getRestaurants: async (token: string) => {
+      const res = await fetch(`${API_BASE}/admin.php?action=restaurants`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      return res.json();
+    },
+    getManagers: async (token: string) => {
+      const res = await fetch(`${API_BASE}/admin.php?action=managers`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      return res.json();
+    },
+    getUsers: async (token: string) => {
+      const res = await fetch(`${API_BASE}/admin.php?action=users`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      return res.json();
+    },
+    createRestaurant: async (data: any, token: string) => {
+      const res = await fetch(`${API_BASE}/admin.php?action=create_restaurant`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(data),
+      });
+      return res.json();
+    },
+    createManager: async (data: any, token: string) => {
+      const res = await fetch(`${API_BASE}/admin.php?action=create_manager`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(data),
+      });
+      return res.json();
+    },
+    updateRestaurant: async (id: string, data: any, token: string) => {
+      const res = await fetch(`${API_BASE}/admin.php?action=update_restaurant&id=${id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(data),
+      });
+      return res.json();
+    },
+    deleteRestaurant: async (id: string, token: string) => {
+      const res = await fetch(`${API_BASE}/admin.php?action=delete_restaurant&id=${id}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      return res.json();
+    },
+  },
   restaurants: {
     getAll: async (token: string) => {
       const res = await fetch(`${API_BASE}/restaurants.php`, {
